@@ -1,0 +1,103 @@
+#+TITLE: Mini Proyecto de Robótica Móvil y Neurobótica: Vehículo Zumo AutoDirigido
+#+AUTHOR: Cristina Heredia\\ Alejandro Alcalde
+#+OPTIONS: ':nil *:t -:t ::t <:t H:6 \n:nil ^:t arch:headline author:t c:nil creator:comment
+#+OPTIONS: d:(not "LOGBOOK") date:t e:t email:nil f:t inline:t num:t p:nil pri:nil stat:t tags:t tasks:t
+#+OPTIONS: tex:t timestamp:t toc:t todo:t |:t
+#+CREATOR: Emacs 25.3.1 Org mode 8.2.10
+#+DESCRIPTION:
+#+EXCLUDE_TAGS: noexport
+#+KEYWORDS:
+#+LANGUAGE: es
+#+SELECT_TAGS: export
+#+OPTIONS: texht:t
+#+LATEX_CLASS: article
+#+LATEX_CLASS_OPTIONS:
+#+LATEX_HEADER:
+#+LATEX_HEADER_EXTRA:
+
+* Arduino
+Para esta parte se ha implementado un Zumo capaz de conducir por sí mismo con las siguientes funcionalidades:
+
+- Sigue Líneas
+- Detección de obstáculos y toma de decisiones.
+- Avisos sonoros a los obstáculos.
+
+
+Para el sigue líneas se usan tres sensores  sigue  líneas para detectar cambios de intensidad.
+
+Antes de comenzar, el robot necesita calibrar el giroscopio y los sensores sigue líneas. Para ello hay que pulsar el botón =A= una vez, esto calibra el giroscopio. Pulsar el botón =A= una segunda vez calibra los sensores sigue líneas.
+
+Cabe mencionar que se parte del ejemplo Sigue Líneas de Arduino, disponible en el IDE de Arduino, las modificaciones realizadas han sido las siguientes:
+
+Se integra código del ejemplo =MazeSolver=, que hace uso del giroscopio, en concreto los ficheros =TurnSensor.h= y =TurnSensor.cpp=. Esto permite calibrar el giroscopio, el cual es necesario para conseguir que el robot de media vuelta e inicie el camino contrario si el obstáculo que encuentra en su camino no se retira en tres segundos.
+
+Para la detección de obstáculos se hace uso de un sensor de proximidad. La distancia a la que se para el robot se fija al valor 6. Cuando el robot se detiene al encontrar un obstáculo, avisa con una melodía simple compuesta por nosotros y similar al claxon de un vehículo. Finalmente, cuando el robot espera más de tres segundos y el obstáculo sigue presente, avisa con otra melodía compuesta por nosotros e inicia al camino en sentido opuesto girando 180 grados.
+
+* VREP
+
+Para el proyecto en VREP se ha implementado un robot *Sigue Líneas* que se detiene ante la presencia de un obstáculo. Si el obstáculo se retira durante la simulación, el robot sigue su camino. Si el obstáculo no se retira, el robot permanece sin moverse para evitar chocar con él.
+
+
+Para seguir las líneas se ha adaptado el ejemplo de VREP /LineFollowerBubbleRob/ para hacerlo funcionar con Zumo, usando el modelo proporcionado en clase. La adaptación ha consistido en modificar el código de /BubbleRob/, que solo tiene dos motores, y hacerlo funcionar en el Zumo, con cuatro motores. Para ello se han tenido que ajustar parámetros de torque, peso etc de acuerdo al Zumo. También se desactivó el comportamiento cíclico de los motores.
+
+Para evitar obstáculos se añade al robot un sensor de proximidad frontal, de forma similar al que se hizo en clase. Cuando el objeto se detecta a una distancia mínima pre-establecida, se detienen los motores del robot durante tres segundos. Transcurrido este tiempo, se vuelven a leer los datos del sensor de proximidad para comprobar si el objeto sigue presente o no. En caso de estar presente, el robot permanece parado, de lo contrario reanuda su marcha.
+
+A continuación se muestra el código principal que controla el Zumo.
+
+#+BEGIN_SRC lua
+function sysCall_actuation()
+    currTime = sim.getSimulationTime()
+    result,distance=sim.readProximitySensor(noseSensor)
+
+    if (result == 1 and distance < .25) then
+        speed = 0
+        if (objectDetected == false) then
+            timeOjectDetected = sim.getSimulationTime()
+            objectDetected = true
+        end
+        --sim.addStatusbarMessage(tostring(timeOjectDetected))
+    end
+    timeWaitingDetectedObject = currTime - timeOjectDetected
+    sim.addStatusbarMessage(tostring(timeWaitingDetectedObject))
+    -- After 3 seconds, check if continue foward or turn back
+    if (timeWaitingDetectedObject > 3 ) then
+        result,distance=sim.readProximitySensor(noseSensor)
+        if (result == 0) then
+            speed = -5
+            timeOjectDetected = 0
+            objectDetected = false
+        end
+    end
+
+    -- read the line detection sensors:
+    sensorReading={false,false,false}
+    for i=1,3,1 do
+        result,data=sim.readVisionSensor(floorSensorHandles[i])
+        if (result>=0) then
+            -- data[11] is the average of intensity of the image
+            sensorReading[i]=(data[11]<0.3)
+        end
+    end
+
+    rightV=speed
+    leftV=speed
+
+    if sensorReading[1] then
+        leftV=0.03*speed
+    end
+    if sensorReading[3] then
+        rightV=0.03*speed
+    end
+    -- When in forward mode, we simply move forward at the desired speed
+    sim.setJointTargetVelocity(frontLeftMotor,leftV)
+    sim.setJointTargetVelocity(frontRightMotor,rightV)
+    sim.setJointTargetVelocity(rearLeftMotor,leftV)
+    sim.setJointTargetVelocity(rearRightMotor,rightV)
+end
+#+END_SRC
+
+En el código se lleva la cuenta del tiempo transcurrido desde la última vez que se detuvo el robot, para decidir cuando se debe hacer la siguiente lectura del sensor de proximidad. La distancia máxima de detección de objetos se fija a 0.25.
+
+Para el funcionamiento del sigue líneas se emplean tres sensores sigue líneas (Izquierdo, central y derecho), ubicados en la parte delantera del Robot. Dichos sensores se colocan con el eje z hacia abajo. De todos los datos proporcionados por los sensores se usa la intensidad media de la imagen para ajustar la velocidad de los motores. Aunque se incorporó un sensor central, no ha sido necesario su uso, ya que el robot sigue las líneas bien con los otros dos.
+
+En los ficheros adjuntos se proporcionan vídeos de ejemplo de ambas prácticas.
